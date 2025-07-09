@@ -1,77 +1,101 @@
 import { useState, useEffect } from 'react';
-import { GoogleMap, LoadScript, Marker } from '@react-google-maps/api';
-import Loader from './Loader';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
-const MAP_CONTAINER_STYLE = {
-  width: '100%',
-  height: '500px',
-};
+// Fix for default markers in react-leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
-const DEFAULT_CENTER = { lat: -1.2921, lng: 36.8219 }; // Nairobi, Kenya
+// Create a custom red icon for current location
+const currentLocationIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
-export default function MapContainer({ setUserLocation, setError, userLocation }) {
-  const [map, setMap] = useState(null);
+const DEFAULT_CENTER = [-1.2921, 36.8219]; // Nairobi, Kenya
 
-  // Get user location
+export default function MapComponent({ setUserLocation, setError, userLocation }) {
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     if (!navigator.geolocation) {
-      setError('Geolocation not supported');
+      setError('Geolocation is not supported by this browser.');
+      setIsLoading(false);
       return;
     }
 
+    console.log('Getting location...');
+
     navigator.geolocation.getCurrentPosition(
-      position => {
-        const loc = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        };
-        setUserLocation(loc);
+      (position) => {
+        console.log('Location found:', position.coords);
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const newLocation = [lat, lng];
+
+        setUserLocation(newLocation);
         setError(null);
+        setIsLoading(false);
       },
-      err => {
-        let message = 'Location detection failed';
-        if (err.code === err.PERMISSION_DENIED) message = 'Location permission denied';
-        if (err.code === err.TIMEOUT) message = 'Location request timed out';
+      (error) => {
+        console.error('Location error:', error);
+        let message = 'Could not get your location';
+        if (error.code === error.PERMISSION_DENIED) {
+          message = 'Location access denied. Please allow location access and refresh.';
+        }
         setError(message);
+        setIsLoading(false);
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
     );
   }, [setUserLocation, setError]);
 
+  if (isLoading) {
+    return (
+      <div style={{ height: '500px', width: '100%' }} className="flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Getting your location...</p>
+          <p className="text-sm text-gray-500 mt-2">Please allow location access</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <LoadScript
-      googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}
-      loadingElement={<Loader />}
+    <MapContainer
+      center={userLocation || DEFAULT_CENTER}
+      zoom={userLocation ? 15 : 10}
+      style={{ height: '500px', width: '100%' }}
     >
-      <GoogleMap
-        mapContainerStyle={MAP_CONTAINER_STYLE}
-        center={userLocation || DEFAULT_CENTER}
-        zoom={userLocation ? 15 : 10}
-        onLoad={map => setMap(map)}
-        options={{
-          streetViewControl: false,
-          mapTypeControl: true,
-          fullscreenControl: true,
-          zoomControl: true
-        }}
-      >
-        {userLocation && (
-          <Marker
-            position={userLocation}
-            title="Your Current Location"
-            icon={{
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="16" cy="16" r="12" fill="#3b82f6" stroke="#ffffff" stroke-width="3"/>
-                  <circle cx="16" cy="16" r="6" fill="#ffffff"/>
-                </svg>
-              `),
-              scaledSize: new window.google.maps.Size(32, 32),
-              anchor: new window.google.maps.Point(16, 16)
-            }}
-          />
-        )}
-      </GoogleMap>
-    </LoadScript>
+      <TileLayer
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      />
+      {userLocation && (
+        <Marker position={userLocation} icon={currentLocationIcon}>
+          <Popup>
+            <div>
+              <strong>📍 Your Current Location</strong><br/>
+              <strong>Lat:</strong> {userLocation[0].toFixed(6)}<br/>
+              <strong>Lng:</strong> {userLocation[1].toFixed(6)}
+            </div>
+          </Popup>
+        </Marker>
+      )}
+    </MapContainer>
   );
 }
